@@ -70,6 +70,24 @@ def authenticate_v2():
         access_token_secret=ACCESS_TOKEN_SECRET,
     )
 
+def authenticate_as_another_account():
+    oauth1_user_handler = tweepy.OAuth1UserHandler(
+        API_KEY,
+        API_KEY_SECRET,
+        callback="oob",
+    )
+    print("Please go to this URL to enable this app, then enter the PIN:")
+    print(oauth1_user_handler.get_authorization_url())
+    pin = input("Input PIN: ")
+    access_token, access_token_secret = oauth1_user_handler.get_access_token(pin)
+    print("here are your access token and access token secret:")
+    print('access_token', access_token)
+    print('access_token_secret', access_token_secret)
+    print("you can modify the script to just use these by default")
+    print("by modifying the .env file. Or so I assume.")
+    oauth1_user_handler.set_access_token(ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
+    return tweepy.API(oauth1_user_handler, wait_on_rate_limit=True)
+
 
 @memory.cache
 def _search_users(api: tweepy.API, *args, **kwargs):
@@ -138,7 +156,8 @@ def smoketest_create_tweet():
 
 def main():
     # smoketest_v1()
-    smoketest_v2()
+    # smoketest_v2()
+    authenticate_as_another_account()
 
 
 
