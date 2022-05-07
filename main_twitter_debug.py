@@ -40,6 +40,7 @@ BEARER_TOKEN = os.environ["BEARER_TOKEN"]
 
 
 DEBUG_ACCOUNT_ID = 1521314141520027648
+MY_ACCOUNT_ID = 805547773944889344
 
 
 def authenticate_v1():
@@ -136,28 +137,52 @@ def _upload_media(api, filename):
     #
     # also, according to same thread, only oathv1 works with v1, so
     # don't bother with oathv2
-    res = api.media_upload(filename)
+    res = api.chunked_upload(filename)
+
+    # to add tags to media in v1.1, maybe we want tweet['entities']['user_mentions']
+    #   -https://developer.twitter.com/en/docs/twitter-api/migrate/data-formats/standard-v1-1-to-v2
+    #   -although kinda seems like this just isn't a thing in v1.1
+
     return res.media_id
 
 
-def smoketest_create_tweet():
-    # prefer v2 for easier tagging and so that non-Elevated dev accounts
-    # can use this
-    client = authenticate_v2()
-
+@memory.cache
+def smoketest_upload_media():
     # EDIT: only v1 api can upload media
     api = authenticate_v1()
     media_id = _upload_media(api, 'sunset.jpg')
+    print("media_id:", media_id)
 
 
-    client.create_tweet(text='hello twitter API',
-                        media_tagged_user_ids=[DEBUG_ACCOUNT_ID])
+def smoketest_check_media():
+    pass  # nvm, there's no API call to check on media by ID
+
+
+def smoketest_create_tweet():
+    MEDIA_ID = 1522804228418269184
+
+    # prefer v2 for easier tweet creation + tagging of people, and so
+    # that non-Elevated dev accounts can use this
+    client = authenticate_v2()
+
+    print("creating tweet...")
+    # NOTE: a lot of people don't have photo tagging enabled (or at least
+    # I don't...?) so tagging in media is flaky. Will just silently not
+    # tag them if that's the case.
+    # UPDATE: ya, works great when I go in my settings an enable photo
+    # tagging. So this is in fact a settings thing. Looks like only
+    # @mentioning people will work robustly
+    client.create_tweet(text='hello again twitter API with tagging',
+                        media_tagged_user_ids=[DEBUG_ACCOUNT_ID, MY_ACCOUNT_ID],
+                        media_ids=[MEDIA_ID])
 
 
 def main():
     # smoketest_v1()
-    # smoketest_v2()
-    authenticate_as_another_account()
+    smoketest_v2()
+    # authenticate_as_another_account()
+    # smoketest_upload_media()
+    # smoketest_create_tweet()
 
 
 

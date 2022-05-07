@@ -3,3 +3,4 @@ tweepy
 python-dotenv
 bs4
 requests
+joblib
