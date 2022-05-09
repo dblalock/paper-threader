@@ -227,8 +227,10 @@ def smoketest_find_authors(authors: Sequence[str], verbose: bool = True) -> Dict
     name2scored_users = {}
     for author in authors:
         users = _search_users(api, q=author, page=0, count=10)
-        for user in users:
+        for i, user in enumerate(users):
             score = 0
+            if i == 0:
+                score += 1  # twitter top hit is usually right
             if user.name.lower() == author.lower():
                 score += 1
             if user.followers_count > 10:
@@ -240,7 +242,7 @@ def smoketest_find_authors(authors: Sequence[str], verbose: bool = True) -> Dict
             for substr in whitelist_cased_strings:
                 if substr in user.description:
                     score += 1
-            if score > 1:  # needs more than just name matching
+            if score > 2:  # needs more than just name and 0th position
                 name2scored_users[author] = name2scored_users.get(author, []) + [(score, user)]
             name2scored_users.get(author)
 
@@ -263,9 +265,6 @@ def smoketest_find_authors(authors: Sequence[str], verbose: bool = True) -> Dict
     return author2user
 
 
-
-
-
 def main():
     # smoketest_v1()
     # smoketest_v2()
@@ -273,7 +272,7 @@ def main():
     # smoketest_upload_media()
     # smoketest_create_tweet()
     # smoketest_find_authors(['davis blalock', 'jonathan frankle'])
-    smoketest_find_authors(['davis blalock', 'divya shanmugam', 'john guttag', 'michael carbin'])
+    smoketest_find_authors(['davis blalock', 'divya shanmugam', 'john guttag', 'michael carbin', 'naveen rao', 'hanlin tang', 'tamara broderick', 'matthew leavitt'])
 
 
 
