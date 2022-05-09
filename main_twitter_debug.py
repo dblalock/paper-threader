@@ -20,6 +20,7 @@
 #   2) PIN-based OAuth to allow other people to authorize this app
 
 import os
+from typing import Dict, Sequence
 
 import tweepy
 from dotenv import load_dotenv
@@ -177,12 +178,102 @@ def smoketest_create_tweet():
                         media_ids=[MEDIA_ID])
 
 
+def _print_user(user: tweepy.User):
+    user_attrs = [
+        'id',           # unambiguous int unique to each user
+        'name',         # arbitrary text listed as their name
+        'screen_name',  # user's handle is @{screen_name}
+        'description', # bio
+        'followers_count',
+    ]
+    for attr in user_attrs:
+        print(f'{attr}:\t{getattr(user, attr)}')
+
+
+def smoketest_find_authors(authors: Sequence[str], verbose: bool = True) -> Dict[str, tweepy.User]:
+    api = authenticate_v1()
+
+    whitelist_anycase_strings = [
+        'research',
+        'scien',
+        'university',
+        'phd',
+        'ph.d',
+        'p.h.d'
+        'faculty',
+        'professor',
+        'google',
+        'msr',
+        'microsoft',
+        'deepmind',
+        'facebook',
+        'meta',
+        'openai',
+        'amazon',
+        'stanford',
+        'cmu',
+        'harvard',
+        'student',
+        'machine learning',
+        'data',
+        'neural',
+    ]
+    whitelist_cased_strings = [
+        'MIT',
+        'AI',
+        'ML',
+    ]
+
+    name2scored_users = {}
+    for author in authors:
+        users = _search_users(api, q=author, page=0, count=10)
+        for user in users:
+            score = 0
+            if user.name.lower() == author.lower():
+                score += 1
+            if user.followers_count > 10:
+                score += 1
+            lowercase_bio = user.description.lower()
+            for substr in whitelist_anycase_strings:
+                if substr in lowercase_bio:
+                    score += 1
+            for substr in whitelist_cased_strings:
+                if substr in user.description:
+                    score += 1
+            if score > 1:  # needs more than just name matching
+                name2scored_users[author] = name2scored_users.get(author, []) + [(score, user)]
+            name2scored_users.get(author)
+
+    author2user = {}
+    for author, candidates in name2scored_users.items():
+        if verbose:
+            print(f'================================ {author}')
+            for score, user in candidates:
+                print(f'------------------------ candidate (score={score}):')
+                _print_user(user)
+        best_user = None
+        best_score = -1
+        for score, user in candidates:
+            if score > best_score:
+                best_user = user
+                best_score = score
+        if best_user is not None:
+            author2user[author] = best_user
+
+    return author2user
+
+
+
+
+
 def main():
     # smoketest_v1()
-    smoketest_v2()
+    # smoketest_v2()
     # authenticate_as_another_account()
     # smoketest_upload_media()
     # smoketest_create_tweet()
+    # smoketest_find_authors(['davis blalock', 'jonathan frankle'])
+    smoketest_find_authors(['davis blalock', 'divya shanmugam', 'john guttag', 'michael carbin'])
 
 
 
