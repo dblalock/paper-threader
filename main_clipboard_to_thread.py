@@ -3,7 +3,7 @@ import math
 import re
 import subprocess
 from dataclasses import dataclass, field
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Sequence, Tuple, Union
 
 import bs4
 import mistletoe as mt  # md -> thread
@@ -11,7 +11,8 @@ import numpy as np
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md  # html -> md
 
-import arxiv_utils
+import arxiv_utils as arxiv
+import twitter_utils as twit
 
 TEST_HTML_EASY = 'test-summary-easy.html'
 TEST_HTML_HARD = 'test-summary-hard.html'
@@ -225,20 +226,8 @@ def _markdown_to_text_img_elems(markdown: str) -> Tuple[List[Union[TextElem, Img
 
 
 @dataclass
-class Tweet:
-    text: str
-    imgs: List[str] = field(default_factory=list)
-
-    def __str__(self):
-        ret = self.text
-        for img in self.imgs:
-            ret += f'\n - {img[:70]}'
-        return ret
-
-
-@dataclass
 class PaperTweetThread:
-    tweets: List[Tweet]
+    tweets: List[twit.Tweet]
     tag_users: List[str] = field(default_factory=list)
 
 
@@ -303,7 +292,7 @@ def _shard_text(text: str) -> List[str]:
     return output_chunks
 
 
-def _markdown_to_tweet_list(markdown: str) -> Tuple[List[Tweet], str]:
+def _markdown_to_tweet_list(markdown: str) -> Tuple[List[twit.Tweet], str]:
     """Raw conversion of markdown to tweet objects. No thread features"""
 
     tweet_elems, paper_title, paper_link = _markdown_to_text_img_elems(markdown)
@@ -340,7 +329,7 @@ def _markdown_to_tweet_list(markdown: str) -> Tuple[List[Tweet], str]:
         # current elem has to be a text elem
         assert isinstance(elem, TextElem)
         texts = _shard_text(elem.text)
-        tweets = [Tweet(text=text) for text in texts]
+        tweets = [twit.Tweet(text=text) for text in texts]
 
         imgs = []
         while len(tweet_elems) and isinstance(tweet_elems[0], ImgElem):
@@ -370,9 +359,17 @@ def _markdown_to_tweet_list(markdown: str) -> Tuple[List[Tweet], str]:
 
         all_tweets += tweets
 
-    print("================================ tweets")
-    for tweet in all_tweets:
-        print(tweet)
+
+    def _number_tweets(tweets: Sequence[twit.Tweet], fmt='[{}/{}]') -> None:
+        ntweets = len(tweets)
+        for i, tweet in enumerate(tweets):
+            tweet.text = f'{tweet.text} {fmt.format(i + 1, ntweets)}'
+
+    _number_tweets(all_tweets)
+
+    # print("================================ tweets")
+    # for tweet in all_tweets:
+    #     print(tweet)
 
     return all_tweets, paper_link
 
@@ -381,13 +378,27 @@ def _markdown_to_tweet_list(markdown: str) -> Tuple[List[Tweet], str]:
 def markdown_to_thread(markdown: str):
     tweets, paper_link = _markdown_to_tweet_list(markdown)
 
-    title, authors, abstract = arxiv_utils.scrape_arxiv_abs_page(paper_link)
+    title, authors, abstract = arxiv.scrape_arxiv_abs_page(paper_link)
+
+    # print("================================")
+    print(thread_to_markdown_preview(tweets))
 
 
 
-
-def thread_to_markdown_preview(inp: Any) -> str:
-    pass
+def thread_to_markdown_preview(tweets: Sequence[twit.Tweet]) -> str:
+    out = ''
+    for i, tweet in enumerate(tweets):
+        # map 1 linebreak -> 2 linebreaks so yields gets new md paragraph;
+        # but don't map 2 linebreaks to 4, etc
+        text = tweet.text.replace('\n', '\n\n')
+        text = text.replace('\n\n\n\n', '\n\n')
+        text = text.replace('\n\n\n\n\n\n', '\n\n\n')
+        out += text
+        for img in tweet.imgs:
+            out += f"\n![]({img})"
+        if i < len(tweets) - 1:
+            out += '\n\n----\n\n'
+    return out
 
 
 def main():

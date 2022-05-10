@@ -65,9 +65,9 @@ def scrape_arxiv_abs_page(url: str):
     title = _extract_title(soup)
     authors = _extract_authors(soup)
     abstract = _extract_abstract(soup)
-    print(f'title:\n{title}')
-    print(f'authors:\n{authors}')
-    print(f'abstract:\n{abstract}')
+    # print(f'title:\n{title}')
+    # print(f'authors:\n{authors}')
+    # print(f'abstract:\n{abstract}')
 
     return title, authors, abstract
 

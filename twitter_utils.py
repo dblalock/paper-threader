@@ -96,4 +96,5 @@ def create_tweet(client: tweepy.Client, tweet: Tweet, tag_users: Optional[List[t
                         media_ids=media_ids)
 
 
-def create_tweet(client: tweepy.Client, tweet: Tweet, tag_users: Optional[List[tweepy.User]]):
+def create_thread(client: tweepy.Client, tweet: Tweet, tag_users: Optional[List[tweepy.User]]):
+    pass
