@@ -5,4 +5,9 @@
 *.env
 .*env
 
+.DS_Store
+follower_lists
+joblib
+__pycache__
+
 threads
