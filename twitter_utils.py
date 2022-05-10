@@ -240,7 +240,8 @@ def save_followers(id_or_screen_name: Union[int, str]):
     followers = get_followers(id_or_screen_name)
 
     df = pd.DataFrame.from_records([f._json for f in followers])
-    df = df[['followers_count', 'screen_name', 'name', 'description']]
+    df = df[['followers_count', 'friends_count', 'screen_name', 'name', 'description']]
+    df.rename({'friends_count': 'following_count', 'description': 'bio'}, axis=1, inplace=True)
     if not os.path.exists(FOLLOWER_LISTS_DIR):
         os.mkdir(FOLLOWER_LISTS_DIR)
     saveas = os.path.join(FOLLOWER_LISTS_DIR, str(id_or_screen_name) + '.csv')
@@ -295,6 +296,7 @@ def main():
 
     # save_followers('moinnadeem')
     # save_followers('AveryLamp')
+    save_followers('davisblalock')
 
     # dbg_tweet0 = Tweet(text='dbg tweet part 1', imgs=['https://i.imgur.com/ExdKOOz.png'])
     # dbg_tweet1 = Tweet(text='dbg tweet part 2', imgs=['sunset.jpg'])
