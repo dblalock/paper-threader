@@ -3,112 +3,12 @@ import argparse
 from typing import Dict, List, Sequence
 from unicodedata import name
 
-import tweepy
-
 import arxiv_utils as arxiv
 import paper_threader as pt
 import twitter_utils as twit
 
-
-def _print_user(user: tweepy.User):
-    user_attrs = [
-        'id',           # unambiguous int unique to each user
-        'name',         # arbitrary text listed as their name
-        'screen_name',  # user's handle is @{screen_name}
-        'description', # bio
-        'followers_count',
-    ]
-    for attr in user_attrs:
-        print(f'{attr}:\t{getattr(user, attr)}')
-
-
-def _find_authors(authors: Sequence[str], verbose: bool = False) -> List[tweepy.User]:
-    api = twit.authenticate_v1()
-
-    whitelist_anycase_strings = [
-        'research',
-        'scien',
-        'university',
-        'phd',
-        'ph.d',
-        'p.h.d'
-        'faculty',
-        'professor',
-        'google',
-        'msr',
-        'microsoft',
-        'deepmind',
-        'facebook',
-        'meta',
-        'openai',
-        'amazon',
-        'stanford',
-        'cmu',
-        'harvard',
-        'student',
-        'machine learning',
-        'data',
-        'neural',
-    ]
-    whitelist_cased_strings = [
-        'MIT',
-        'AI',
-        'ML',
-    ]
-
-    name2scored_users = {}
-    for author in authors:
-        users = twit.search_users(api, q=author, page=0, count=10)
-        for i, user in enumerate(users):
-            score = 0
-            if i == 0:
-                score += 1  # twitter top hit is usually right
-            if user.name.lower() == author.lower():
-                score += 1
-            if user.followers_count > 10:
-                score += 1
-            lowercase_bio = user.description.lower()
-            for substr in whitelist_anycase_strings:
-                if substr in lowercase_bio:
-                    score += 1
-            for substr in whitelist_cased_strings:
-                if substr in user.description:
-                    score += 1
-            if score > 2:  # needs more than just name and 0th position
-                name2scored_users[author] = name2scored_users.get(author, []) + [(score, user)]
-            name2scored_users.get(author)
-
-    author2user = {}
-    for author, candidates in name2scored_users.items():
-        if verbose:
-            print(f'================================ {author}')
-            for score, user in candidates:
-                print(f'------------------------ candidate (score={score}):')
-                _print_user(user)
-        best_user = None
-        best_score = -1
-        for score, user in candidates:
-            if score > best_score:
-                best_user = user
-                best_score = score
-        if best_user is not None:
-            author2user[author] = best_user
-
-    # return best-guess usernames of authors in order
-    ret = []
-    for author in authors:
-        if author in author2user:
-            ret.append(author2user[author])
-    return ret
-
-
-def authors_for_paper(url: str) -> List[tweepy.User]:
-    _, authors, _ = arxiv.scrape_arxiv_abs_page(url)
-    return _find_authors(authors, verbose=True)
-
-
-def save_followers(username: str):
-    return twit.save_followers(username)
+# def save_followers(username: str):
+#     return twit.save_followers(username)
 
 
 def main() -> None:
@@ -181,7 +81,9 @@ def main() -> None:
         default='',
         type=str,
         help=('URL of arxiv abstract; writes/prints a markdown file ' +
-              'with a bare-bones tweet thread to manually work modify'),
+              'with a bare-bones tweet thread to manually work modify; ' +
+              'not to be mixed with auto-tweeting due to duplicate ' +
+              'final tweets'),
     )
 
 
@@ -200,11 +102,11 @@ def main() -> None:
             print(s)
 
     if args.save_followers_of_user:
-        save_followers(args.save_followers_of_user)
+        twit.save_followers(args.save_followers_of_user)
         return
 
     if args.users_for_abstract:
-        authors_for_paper(args.users_for_abstract)
+        pt.authors_usernames_for_paper(args.users_for_abstract, verbose=True)
         return
 
     if args.print_my_twitter_keys:
@@ -219,7 +121,7 @@ def main() -> None:
     if args.skeleton_for_paper:
         url = args.skeleton_for_paper
         title, authors, abstract = arxiv.scrape_arxiv_abs_page(url)
-        author_users = _find_authors(authors)
+        author_users = pt.find_authors(authors)
         author_usernames = [user.screen_name for user in author_users]
         text = pt.skeleton_for_paper(paper_title=title, paper_link=url, author_usernames=author_usernames, abstract=abstract)
         _save_or_print(text)

@@ -103,7 +103,7 @@ def _download_img(url: str, tempdir: str) -> str:
 
 
 @memory.cache(ignore=['api'])
-def _upload_media(api, filename):
+def _upload_media(api: tweepy.API, filename: str):
     with tempfile.TemporaryDirectory() as d:
         if filename.startswith('http'):
             filename = _download_img(filename, tempdir=d)
@@ -152,7 +152,8 @@ def create_tweet(api: tweepy.API,
     media_ids = media_ids or None
 
     if tag_users:
-        tag_users = [_ensure_user_id(user) for user in tag_users]
+        print("tag users: ", tag_users)
+        tag_users = [_ensure_user_id(api, user) for user in tag_users]
 
     if debug_mode:
         # ensure that tweet is unique

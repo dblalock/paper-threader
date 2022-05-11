@@ -3,15 +3,16 @@ import math
 import re
 import subprocess
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Any, List, Optional, Sequence, Tuple, Union
 
 import bs4
 import mistletoe as mt  # md -> thread
 import numpy as np
+import tweepy  # only imported for type checking of author username lookup
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md  # html -> md
 
-# import arxiv_utils as arxiv
+import arxiv_utils as arxiv
 import twitter_utils as twit
 
 TEST_HTML_EASY = 'test-summary-easy.html'
@@ -26,6 +27,106 @@ MAX_TWEET_TEXT_LENGTH = 272  # 280 minus space for " [##/##]"
 ELLIPSIS = '…'
 MAX_TWEET_TEXT_SNIPPET_LENGTH = MAX_TWEET_TEXT_LENGTH - (2 * len(ELLIPSIS))
 
+# ================================================================ author lookup
+
+def _print_user(user: tweepy.User):
+    user_attrs = [
+        'id',           # unambiguous int unique to each user
+        'name',         # arbitrary text listed as their name
+        'screen_name',  # user's handle is @{screen_name}
+        'description', # bio
+        'followers_count',
+    ]
+    for attr in user_attrs:
+        print(f'{attr}:\t{getattr(user, attr)}')
+
+
+def find_authors(authors: Sequence[str], verbose: bool = False) -> List[tweepy.User]:
+    api = twit.authenticate_v1()
+
+    whitelist_anycase_strings = [
+        'research',
+        'scien',
+        'university',
+        'phd',
+        'ph.d',
+        'p.h.d'
+        'faculty',
+        'professor',
+        'google',
+        'msr',
+        'microsoft',
+        'deepmind',
+        'facebook',
+        'meta',
+        'openai',
+        'amazon',
+        'stanford',
+        'cmu',
+        'harvard',
+        'student',
+        'machine learning',
+        'data',
+        'neural',
+    ]
+    whitelist_cased_strings = [
+        'MIT',
+        'AI',
+        'ML',
+    ]
+
+    name2scored_users = {}
+    for author in authors:
+        users = twit.search_users(api, q=author, page=0, count=10)
+        for i, user in enumerate(users):
+            score = 0
+            if i == 0:
+                score += 1  # twitter top hit is usually right
+            if user.name.lower() == author.lower():
+                score += 1
+            if user.followers_count > 10:
+                score += 1
+            lowercase_bio = user.description.lower()
+            for substr in whitelist_anycase_strings:
+                if substr in lowercase_bio:
+                    score += 1
+            for substr in whitelist_cased_strings:
+                if substr in user.description:
+                    score += 1
+            if score > 2:  # needs more than just name and 0th position
+                name2scored_users[author] = name2scored_users.get(author, []) + [(score, user)]
+            name2scored_users.get(author)
+
+    author2user = {}
+    for author, candidates in name2scored_users.items():
+        if verbose:
+            print(f'================================ {author}')
+            for score, user in candidates:
+                print(f'------------------------ candidate (score={score}):')
+                _print_user(user)
+        best_user = None
+        best_score = -1
+        for score, user in candidates:
+            if score > best_score:
+                best_user = user
+                best_score = score
+        if best_user is not None:
+            author2user[author] = best_user
+
+    # return best-guess usernames of authors in order
+    ret = []
+    for author in authors:
+        if author in author2user:
+            ret.append(author2user[author])
+    return ret
+
+
+def authors_usernames_for_paper(url: str, verbose: bool = False) -> List[str]:
+    _, authors, _ = arxiv.scrape_arxiv_abs_page(url)
+    users = find_authors(authors, verbose=verbose)
+    return [user.screen_name for user in users]
+
+
 # ======================================= substack pasteboard -> markdown
 
 def _run_cmd(cmd: str, fail_on_stderr_output: bool = True):
@@ -39,11 +140,12 @@ def _run_cmd(cmd: str, fail_on_stderr_output: bool = True):
 
 
 def html_to_markdown(html: str) -> str:
-    # soup = BeautifulSoup(html, features='lxml')
+    # soup = BeautifulSoup(html, 'html.parser')
+    # print(soup.prettify())
+    # print(html)
+    # import sys; sys.exit()
     # paragraphs = soup.find_all('p')
-
     # _text_in_tag
-
     # print(soup.prettify())
     # # return
     # for p in paragraphs:
@@ -57,8 +159,11 @@ def html_to_markdown(html: str) -> str:
         # print(p.string)
         # print(p.contents[0].string)
     # html = str(soup.body)
+    # print(html)
 
     ret = md(html, strip=['b', 'i', 'em', 'span', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ol', 'ul'])  # wow, markdownify is magic
+    # ret = md(html, convert=['p', 'a', 'img', 'ol', 'ul'])  # wow, markdownify is magic
+    # ret = md(html, convert=['p', 'a', 'img'])  # wow, markdownify is magic
     ret = ret.replace('⭐', '')
 
     # remove links to image wrapping images
@@ -255,7 +360,13 @@ def _generate_final_tweet_elem(paper_link: str, author_usernames: Optional[List[
     with open(fmt_path, 'r') as f:
         tail_tweet_format_str = f.read()
     if author_usernames:
-        author_mentions = ['@' + username for username in author_usernames]
+        author_mentions = []
+        for username in author_usernames:
+            if not username:
+                continue
+            if not username.startswith('@'):
+                username = '@' + username
+            author_mentions.append(username)
         authors_str = ' '.join(author_mentions)
         text = tail_tweet_format_str.format(link=paper_link, authors=authors_str)
     else:
@@ -333,30 +444,41 @@ def _markdown_to_tweet_list(markdown: str, infer_tag_users_from_text: bool = Tru
     """Raw conversion of markdown to tweet objects. No thread features."""
 
     tag_users = []
-    # if infer_tag_users_from_text:
-    #     keep_lines = []
-    #     for line in markdown.splitlines():
-    #         if line.strip().startswith(TAG_USERS_MARKER):
-    #             names = line[len(TAG_USERS_MARKER):].strip().split()
-    #             tag_users += names
-    #             continue
-    #         keep_lines.append(line)
-    #     markdown = '\n'.join(keep_lines)
+    if infer_tag_users_from_text:
+        keep_lines = []
+        for line in markdown.splitlines():
+            if line.strip().startswith(TAG_USERS_MARKER):
+                names = line[len(TAG_USERS_MARKER):].strip().split()
+                tag_users += names
+                continue
+            keep_lines.append(line)
+        markdown = '\n'.join(keep_lines)
 
     tweet_elems, paper_title, paper_link = _markdown_to_text_img_elems(markdown)
 
-    # # only try to infer tagged users if not explicitly specified
-    # if not tag_users and infer_tag_users_from_link:
-    #     pass
+    # only try to infer tagged users if not explicitly specified
+    if not tag_users and infer_tag_users_from_link:
+        if not paper_link:
+            # first_paper = markdown.find('https://arxiv.org/abs/')
+            first_paper = re.search('https://arxiv.org/abs/[\d]*.[\d]*', markdown)
+            # print('first paper found: ', first_paper)
+            if first_paper:
+                paper_link = first_paper.group()
+            # print('matching string: ', paper_link)
+
+        # import sys; sys.exit()
+        if paper_link:
+            tag_users = authors_usernames_for_paper(paper_link)
+
+    # import sys; sys.exit()
 
     final_elem = _generate_final_tweet_elem(paper_link, author_usernames=tag_users)
     tweet_elems.append(final_elem)
 
-    print("================================ Tweet elems:")
-    for elem in tweet_elems:
-        print(elem)
+    # print("================================ Tweet elems:")
+    # for elem in tweet_elems:
+    #     print(elem)
     # return
-
 
     # pull out the first image, if present, to use for the first tweet
     hero_img = ''
@@ -425,7 +547,9 @@ def _markdown_to_tweet_list(markdown: str, infer_tag_users_from_text: bool = Tru
     #     print(tweet)
 
     # for tagging in initial image
-    all_tweets[0].tag_users = tag_users
+    if tag_users:
+        tag_users = [user.strip('@') for user in tag_users]
+        all_tweets[0].tag_users = tag_users
 
     return all_tweets
 
@@ -469,9 +593,17 @@ def thread_to_markdown_preview(tweets: Sequence[twit.Tweet]) -> str:
         out += text
         for img in tweet.imgs:
             out += f"\n![]({img})"
+        if tweet.tag_users:
+            out += '\n*Users to tag in image:*'
+            for username in tweet.tag_users:
+                username = username if username.startswith('@') else '@' + username
+                out += f'\n 1. {username}'
         if i < len(tweets) - 1:
             out += '\n\n----\n\n'
     return out
+
+
+# ================================================================ debug
 
 
 def main():
