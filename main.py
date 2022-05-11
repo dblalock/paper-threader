@@ -20,6 +20,7 @@ def main() -> None:
     # preview_markdown_thread: in_path, out_path -> None
     # tweet_markdown: in_path, None
 
+    # ---------------------------------------------- general args / setup
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '-i',
@@ -36,6 +37,31 @@ def main() -> None:
         help='path to write to, if applicable',
     )
     parser.add_argument(
+        '--save_my_twitter_keys',
+        default=False,
+        action='store_true',
+        help=('Run this to get ACCESS_TOKEN and ACCESS_TOKEN_SECRET to ' +
+              'put in a .env file (by default, writes to ' +
+              f'{twit.DEFAULT_USER_ENV_PATH}). ' +
+              'These are tied to your account and allow posting as you.'),
+    )
+    parser.add_argument(
+        '--user_env',
+        default='',
+        type=str,
+        help=(f'Path to user .env file that specifies credentials for' +
+              'the twitter acccount to do stuff as. Only matters for' +
+              'creating tweets'),
+    )
+    parser.add_argument(
+        '--for_real',
+        default=False,
+        action='store_true',
+        help=(f'Shorthand to set --user_env to {twit.DEFAULT_USER_ENV_PATH} instead of None'),
+    )
+
+    # ------------------------------------------------- commands
+    parser.add_argument(
         '--save_followers_of_user',
         type=str,
         default='',
@@ -50,11 +76,13 @@ def main() -> None:
               f'users that might correspond to the authors'),
     )
     parser.add_argument(
-        '--print_my_twitter_keys',
-        default=False,
-        action='store_true',
-        help=('Run this to get API_KEY and API_SECRET to put in .env; ' +
-              'These are tied to your account and allow posting as you.'),
+        '--skeleton_for_paper',
+        default='',
+        type=str,
+        help=('URL of arxiv abstract; writes/prints a markdown file ' +
+              'with a bare-bones tweet thread to manually work modify; ' +
+              'not to be mixed with auto-tweeting due to duplicate ' +
+              'final tweets'),
     )
     parser.add_argument(
         '--pasteboard_to_markdown',
@@ -75,29 +103,6 @@ def main() -> None:
         action='store_true',
         help=('Tweets contents of a markdown file as a thread. Use ' +
               '--markdown_to_thread_preview to check content first.'),
-    )
-    parser.add_argument(
-        '--skeleton_for_paper',
-        default='',
-        type=str,
-        help=('URL of arxiv abstract; writes/prints a markdown file ' +
-              'with a bare-bones tweet thread to manually work modify; ' +
-              'not to be mixed with auto-tweeting due to duplicate ' +
-              'final tweets'),
-    )
-    parser.add_argument(
-        '--user_env',
-        default='',
-        type=str,
-        help=(f'Path to user .env file that specifies credentials for' +
-              'the twitter acccount to do stuff as. Only matters for' +
-              'creating tweets'),
-    )
-    parser.add_argument(
-        '--for_real',
-        default=False,
-        action='store_true',
-        help=(f'Shorthand to set --user_env to {twit.DEFAULT_USER_ENV_PATH} instead of None'),
     )
 
     args = parser.parse_args()
@@ -124,7 +129,7 @@ def main() -> None:
         pt.authors_usernames_for_paper(args.users_for_abstract, verbose=True)
         return
 
-    if args.print_my_twitter_keys:
+    if args.save_my_twitter_keys:
         twit.authenticate_as_another_account()
         return
 
