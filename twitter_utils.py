@@ -80,7 +80,7 @@ def authenticate_as_another_account():
 
 
 @memory.cache
-def _search_users(api: tweepy.API, *args, **kwargs):
+def search_users(api: tweepy.API, *args, **kwargs):
     return api.search_users(*args, **kwargs)
 
 
@@ -109,13 +109,13 @@ def _upload_media(api, filename):
 
 # api v1 impl
 @memory.cache(ignore=['api'])
-def _get_user(api: tweepy.API, screen_name: str):
+def get_user(api: tweepy.API, screen_name: str):
     return api.get_user(screen_name=screen_name)
 
 
 # v2 impl fails with 401 Unauthorized on other people's accounts
 # @memory.cache(ignore=['client'])
-# def _get_user(client: tweepy.Client, username: str):
+# def get_user(client: tweepy.Client, username: str):
 #     return client.get_user(username=username)
 
 
@@ -128,8 +128,8 @@ def _ensure_user_id(api: tweepy.API, user: Optional[Union[str, int, tweepy.User]
         return user  # already an id
 
     # let's hope it's a screen name
-    return _get_user(api, user).id
-    # return _get_user(client, user).id
+    return get_user(api, user).id
+    # return get_user(client, user).id
 
 
 # we need a v1 client (api) and a v2 client (client) since v1 can't
@@ -139,7 +139,6 @@ def create_tweet(api: tweepy.API,
                  tweet: Tweet,
                  tag_users: Optional[List[tweepy.User]] = None,
                  in_reply_to_tweet_id: Optional[str] = None,
-                #  quote_tweet_url: Optional[str] = None) -> tweepy.Response:
                  quote_tweet_id: str = None,
                  debug_mode: bool = False) -> tweepy.Response:
 
@@ -165,35 +164,29 @@ def create_tweet(api: tweepy.API,
             media_ids=media_ids,
             in_reply_to_tweet_id=in_reply_to_tweet_id,
             quote_tweet_id=quote_tweet_id,
-            # quote_tweet_id=None,  # TODO rm after debug
-            # quote_tweet_id=quote_tweet_url,
         )
     except tweepy.Forbidden as e:
         print("Forbidden error! Did you already tweet this exact tweet?")
         raise(e)
 
 
-# def create_thread(tweets: List[Tweet], tag_users: Optional[List[tweepy.User]]):
 def create_thread(tweets: List[Tweet], tag_users: Optional[List[tweepy.User]] = None, quote_first_tweet_at_end: Union[str, bool] = 'auto', debug_mode: bool = False):
     api = authenticate_v1()
     client = authenticate_v2()
 
+    if quote_first_tweet_at_end == 'auto':
+        quote_first_tweet_at_end = len(tweets) > 3
+
     first_tweet_id = None
     previous_tweet_id = None
-
-
-    # # TODO rm
-    # tweets = [tweets[0]]
-
     for i, tweet in enumerate(tweets):
-        print("----------- i =", i)
-        print("tryna tweet:\n", tweet)
+        if debug_mode:
+            print("----------- i =", i)
+            print("tryna tweet:\n", tweet)
 
-        # quote_tweet_url = None
         quote_tweet_id = None
-        if i == (len(tweets) - 1) and i > 0:
+        if quote_first_tweet_at_end and i == (len(tweets) - 1) and i > 0:
             assert first_tweet_id is not None, f"no first tweet for last #{i}"
-            # quote_tweet_url = f'https://twitter.com/twitter/statuses/{first_tweet_id}'
             quote_tweet_id = first_tweet_id
 
         ret = create_tweet(api=api,
@@ -203,12 +196,11 @@ def create_thread(tweets: List[Tweet], tag_users: Optional[List[tweepy.User]] = 
                            in_reply_to_tweet_id=previous_tweet_id,
                            quote_tweet_id=quote_tweet_id,
                            debug_mode=debug_mode,
-                        #    quote_tweet_url=quote_tweet_url,
         )
-        print("---- tweet creation response:")
-        print(ret)
+        if debug_mode:
+            print("---- tweet creation response:")
+            print(ret)
         previous_tweet_id = ret.data['id']
-        # print("tweet id: ", previous_tweet_id)
         if i == 0:
             first_tweet_id = previous_tweet_id
 
@@ -246,21 +238,6 @@ def save_followers(id_or_screen_name: Union[int, str]):
         os.mkdir(FOLLOWER_LISTS_DIR)
     saveas = os.path.join(FOLLOWER_LISTS_DIR, str(id_or_screen_name) + '.csv')
     df.to_csv(saveas, index=False)
-
-
-    # follower_tuples = [(f.followers_count, f.screen_name, f.name) for f in followers]
-
-# def followers_for_user(id_or_screen_name: Union[int, str]):
-#     # client = authenticate_v2()
-#     api = authenticate_v1()
-#     user_id = _ensure_user_id(api, id_or_screen_name)
-#     followers = api.get_followers(user_id=user_id, count=)
-
-
-#     # user_id = _ensure_user_id(client, id_or_screen_name)
-#     # followers = client.get_users_followers(user_id)
-
-#     # TODO
 
 
 # ================================================================ debug

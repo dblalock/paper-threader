@@ -3,7 +3,7 @@ import math
 import re
 import subprocess
 from dataclasses import dataclass, field
-from typing import Any, List, Sequence, Tuple, Union
+from typing import Any, List, Optional, Sequence, Tuple, Union
 
 import bs4
 import mistletoe as mt  # md -> thread
@@ -11,7 +11,7 @@ import numpy as np
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md  # html -> md
 
-import arxiv_utils as arxiv
+# import arxiv_utils as arxiv
 import twitter_utils as twit
 
 TEST_HTML_EASY = 'test-summary-easy.html'
@@ -91,7 +91,7 @@ class ImgElem:
         return f'{self.typ} @ {self.url[:70]}...'
 
 
-def _markdown_to_text_img_elems(markdown: str) -> Tuple[List[Union[TextElem, ImgElem]], str, str]:
+def _markdown_to_text_img_elems(markdown: str, paper_title: str = '', paper_link: str = '') -> Tuple[List[Union[TextElem, ImgElem]], str, str]:
     # string = '1. Input-dependent prompt tuning for multitask learning with many tasks.'
     # markdown = re.sub('^[\s]*(\d*)\.\s', r'\1) ', f'{string}\n{string}', flags=re.MULTILINE)
     # "1. whatever" -> "1): whatever"; avoids mistletoe making it an unordered list
@@ -115,17 +115,17 @@ def _markdown_to_text_img_elems(markdown: str) -> Tuple[List[Union[TextElem, Img
     # for hr in hrules:
     #     hr.decompose()
 
-    # assume first link is paper link
-    first_anchor = soup.find('a')
-    # print(first_anchor)
+    if (not paper_title) or (not paper_link):
+        # assume first link is paper link
+        first_anchor = soup.find('a')
 
-    def _unpack_anchor_tag(tag) -> Tuple[str, str]:
-        return tag.string, tag['href']
+        def _unpack_anchor_tag(tag) -> Tuple[str, str]:
+            return tag.string, tag['href']
 
-    paper_title, paper_link = _unpack_anchor_tag(first_anchor)
-    # print(paper_title)
-    # print(paper_link)
-    first_anchor.extract()
+        paper_title, paper_link = _unpack_anchor_tag(first_anchor)
+        # print(paper_title)
+        # print(paper_link)
+        first_anchor.extract()
 
     # convert other links to raw text (rips out links)
     for a in soup.find_all('a'):
@@ -225,16 +225,20 @@ def _markdown_to_text_img_elems(markdown: str) -> Tuple[List[Union[TextElem, Img
     return tweet_elems, paper_title, paper_link
 
 
-@dataclass
-class PaperTweetThread:
-    tweets: List[twit.Tweet]
-    tag_users: List[str] = field(default_factory=list)
+# @dataclass
+# class PaperTweetThread:
+#     tweets: List[twit.Tweet]
+#     tag_users: List[str] = field(default_factory=list)
 
 
-def _generate_final_tweet_elem(paper_link: str):
+def _generate_final_tweet_elem(paper_link: str, authors_str: str = ''):
     with open(FINAL_TWEET_FMT_STRING_PATH, 'r') as f:
         tail_tweet_format_str = f.read()
-    return TextElem(text=tail_tweet_format_str.format(paper_link))
+    if authors_str:
+        text = tail_tweet_format_str.format(paper_link, authors_str)
+    else:
+        text = tail_tweet_format_str.format(paper_link)
+    return TextElem(text=text)
 
 
 def _shard_text(text: str) -> List[str]:
@@ -374,15 +378,30 @@ def _markdown_to_tweet_list(markdown: str) -> Tuple[List[twit.Tweet], str]:
     return all_tweets, paper_link
 
 
+def _save_or_print(content: str, saveas: str = '') -> None:
+    if saveas:
+        with open(saveas, 'w') as f:
+            f.write(content)
+    else:
+        print(content)
+
+
+# def markdown_to_thread(markdown: str, saveas: str = '', preview: bool = True, post_tweet: bool = False, tag_users: Optional[List[str]] = None):
 
 def markdown_to_thread(markdown: str):
     tweets, paper_link = _markdown_to_tweet_list(markdown)
 
-    title, authors, abstract = arxiv.scrape_arxiv_abs_page(paper_link)
+    # title, authors, abstract = arxiv.scrape_arxiv_abs_page(paper_link)
 
-    # print("================================")
-    print(thread_to_markdown_preview(tweets))
+    # author_users = twit.
 
+    # # print("================================")
+    # if preview:
+    #     content = thread_to_markdown_preview(tweets)
+    #     _save_or_print(content, saveas=saveas)
+
+    # if post_tweet:
+    #     twit.create_thread(tweets)
 
 
 def thread_to_markdown_preview(tweets: Sequence[twit.Tweet]) -> str:
