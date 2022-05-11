@@ -16,7 +16,10 @@ import twitter_utils as twit
 
 TEST_HTML_EASY = 'test-summary-easy.html'
 TEST_HTML_HARD = 'test-summary-hard.html'
-FINAL_TWEET_FMT_STRING_PATH = 'final-tweet-format.txt'
+FINAL_TWEET_FMT_STRING_PATH_WITH_AUTHORS = 'final-tweet-format-with-authors.txt'
+FINAL_TWEET_FMT_STRING_PATH_NO_AUTHORS = 'final-tweet-format-no-authors.txt'
+
+TAG_USERS_MARKER = 'TAG_USERS:'
 
 
 MAX_TWEET_TEXT_LENGTH = 272  # 280 minus space for " [##/##]"
@@ -39,6 +42,8 @@ def html_to_markdown(html: str) -> str:
     # soup = BeautifulSoup(html, features='lxml')
     # paragraphs = soup.find_all('p')
 
+    # _text_in_tag
+
     # print(soup.prettify())
     # # return
     # for p in paragraphs:
@@ -60,7 +65,16 @@ def html_to_markdown(html: str) -> str:
     # step 1: ensure each [![]( is on its own line (not sure why needed)
     ret = re.sub(re.escape('[![]('), '\n[![](', ret)
     # step 2: [![]($1)](*) -> ![]($1)
-    return re.sub('\[\!\[\]\(([\S]*)\)\]\([\S]*\)', r'![](\1)\n', ret)
+    ret = re.sub('\[\!\[\]\(([\S]*)\)\]\([\S]*\)', r'![](\1)\n', ret)
+
+    # ensure images always have a newline after them; having text
+    # right after them causes them to get put in the same tweet as
+    # the following text, rather than the text above them.
+    img_pattern = '\!\[\]\([\S]*\)'
+    non_whitespace_char = '[\S]*'
+    full_pattern = '(' + img_pattern + r')\n(' + non_whitespace_char + ')'
+    return re.sub(full_pattern, r'\1\n\n\2', ret)
+    # return re.sub('(\!\[\]\([\S]*\))\n([\S]*)', r'\1\n\n\2', ret)
 
 
 
@@ -91,7 +105,20 @@ class ImgElem:
         return f'{self.typ} @ {self.url[:70]}...'
 
 
-def _markdown_to_text_img_elems(markdown: str, paper_title: str = '', paper_link: str = '') -> Tuple[List[Union[TextElem, ImgElem]], str, str]:
+def _text_in_tag(p: bs4.Tag) -> str:
+    contained_text = ''
+    for child in p.children:
+        # print('----')
+        if isinstance(child, bs4.NavigableString):
+            contained_text += str(child)
+    if contained_text:
+        contained_text = re.sub('\s', ' ', contained_text)
+        # print("contained_text: ", contained_text)
+    return contained_text
+
+
+# def _markdown_to_text_img_elems(markdown: str, paper_title: str = '', paper_link: str = '') -> Tuple[List[Union[TextElem, ImgElem]], str, str]:
+def _markdown_to_text_img_elems(markdown: str) -> Tuple[List[Union[TextElem, ImgElem]], str, str]:
     # string = '1. Input-dependent prompt tuning for multitask learning with many tasks.'
     # markdown = re.sub('^[\s]*(\d*)\.\s', r'\1) ', f'{string}\n{string}', flags=re.MULTILINE)
     # "1. whatever" -> "1): whatever"; avoids mistletoe making it an unordered list
@@ -115,13 +142,14 @@ def _markdown_to_text_img_elems(markdown: str, paper_title: str = '', paper_link
     # for hr in hrules:
     #     hr.decompose()
 
-    if (not paper_title) or (not paper_link):
-        # assume first link is paper link
-        first_anchor = soup.find('a')
-
-        def _unpack_anchor_tag(tag) -> Tuple[str, str]:
+    def _unpack_anchor_tag(tag) -> Tuple[str, str]:
             return tag.string, tag['href']
 
+    # if (not paper_title) or (not paper_link):
+    # assume first link is paper link
+    first_anchor = soup.find('a')
+    paper_title, paper_link = '', ''
+    if first_anchor is not None:
         paper_title, paper_link = _unpack_anchor_tag(first_anchor)
         # print(paper_title)
         # print(paper_link)
@@ -130,17 +158,6 @@ def _markdown_to_text_img_elems(markdown: str, paper_title: str = '', paper_link
     # convert other links to raw text (rips out links)
     for a in soup.find_all('a'):
         a.unwrap()
-
-    def _text_in_tag(p: bs4.Tag) -> str:
-        contained_text = ''
-        for child in p.children:
-            # print('----')
-            if isinstance(child, bs4.NavigableString):
-                contained_text += str(child)
-        if contained_text:
-            contained_text = re.sub('\s', ' ', contained_text)
-            # print("contained_text: ", contained_text)
-        return contained_text
 
     # # clean up paragraphs
     # for p in soup.find_all('p'):
@@ -231,14 +248,28 @@ def _markdown_to_text_img_elems(markdown: str, paper_title: str = '', paper_link
 #     tag_users: List[str] = field(default_factory=list)
 
 
-def _generate_final_tweet_elem(paper_link: str, authors_str: str = ''):
-    with open(FINAL_TWEET_FMT_STRING_PATH, 'r') as f:
+def _generate_final_tweet_elem(paper_link: str, author_usernames: Optional[List[str]] = None):
+    fmt_path = (FINAL_TWEET_FMT_STRING_PATH_WITH_AUTHORS if author_usernames
+                else FINAL_TWEET_FMT_STRING_PATH_NO_AUTHORS)
+
+    with open(fmt_path, 'r') as f:
         tail_tweet_format_str = f.read()
-    if authors_str:
-        text = tail_tweet_format_str.format(paper_link, authors_str)
+    if author_usernames:
+        author_mentions = ['@' + username for username in author_usernames]
+        authors_str = ' '.join(author_mentions)
+        text = tail_tweet_format_str.format(link=paper_link, authors=authors_str)
     else:
-        text = tail_tweet_format_str.format(paper_link)
+        text = tail_tweet_format_str.format(link=paper_link)
     return TextElem(text=text)
+
+
+def skeleton_for_paper(paper_title: str,
+                       paper_link: str,
+                       author_usernames: List[str],
+                       abstract: str) -> str:
+    text = f'{paper_title}\n{abstract}'
+    tail_elem = _generate_final_tweet_elem(paper_link=paper_link, author_usernames=author_usernames)
+    return f'{text}\n\n{tail_elem.text}'
 
 
 def _shard_text(text: str) -> List[str]:
@@ -272,7 +303,9 @@ def _shard_text(text: str) -> List[str]:
 
         # print('which_breakpoint', which_breakpoint, 'split_at:', split_at)
 
-        chunk_text = text[:split_at] + ELLIPSIS
+        chunk_text = text[:split_at].strip()
+        if chunk_text[-1] not in ('?', '.', '!'):
+            chunk_text = chunk_text + ELLIPSIS
         if needs_initial_ellipsis:
             chunk_text = ELLIPSIS + chunk_text
         output_chunks.append(chunk_text)
@@ -296,16 +329,32 @@ def _shard_text(text: str) -> List[str]:
     return output_chunks
 
 
-def _markdown_to_tweet_list(markdown: str) -> Tuple[List[twit.Tweet], str]:
-    """Raw conversion of markdown to tweet objects. No thread features"""
+def _markdown_to_tweet_list(markdown: str, infer_tag_users_from_text: bool = True, infer_tag_users_from_link: bool = True) -> Tuple[List[twit.Tweet], str]:
+    """Raw conversion of markdown to tweet objects. No thread features."""
+
+    tag_users = []
+    # if infer_tag_users_from_text:
+    #     keep_lines = []
+    #     for line in markdown.splitlines():
+    #         if line.strip().startswith(TAG_USERS_MARKER):
+    #             names = line[len(TAG_USERS_MARKER):].strip().split()
+    #             tag_users += names
+    #             continue
+    #         keep_lines.append(line)
+    #     markdown = '\n'.join(keep_lines)
 
     tweet_elems, paper_title, paper_link = _markdown_to_text_img_elems(markdown)
-    final_elem = _generate_final_tweet_elem(paper_link)
+
+    # # only try to infer tagged users if not explicitly specified
+    # if not tag_users and infer_tag_users_from_link:
+    #     pass
+
+    final_elem = _generate_final_tweet_elem(paper_link, author_usernames=tag_users)
     tweet_elems.append(final_elem)
 
-    # print("================================ Tweet elems:")
-    # for elem in tweet_elems:
-    #     print(elem)
+    print("================================ Tweet elems:")
+    for elem in tweet_elems:
+        print(elem)
     # return
 
 
@@ -375,21 +424,26 @@ def _markdown_to_tweet_list(markdown: str) -> Tuple[List[twit.Tweet], str]:
     # for tweet in all_tweets:
     #     print(tweet)
 
-    return all_tweets, paper_link
+    # for tagging in initial image
+    all_tweets[0].tag_users = tag_users
+
+    return all_tweets
 
 
-def _save_or_print(content: str, saveas: str = '') -> None:
-    if saveas:
-        with open(saveas, 'w') as f:
-            f.write(content)
-    else:
-        print(content)
+# def _save_or_print(content: str, saveas: str = '') -> None:
+#     if saveas:
+#         with open(saveas, 'w') as f:
+#             f.write(content)
+#     else:
+#         print(content)
 
 
 # def markdown_to_thread(markdown: str, saveas: str = '', preview: bool = True, post_tweet: bool = False, tag_users: Optional[List[str]] = None):
 
-def markdown_to_thread(markdown: str):
-    tweets, paper_link = _markdown_to_tweet_list(markdown)
+# def markdown_to_thread(markdown: str) -> List[twit.Tweet, str]:
+def markdown_to_thread(markdown: str) -> List[twit.Tweet]:
+    return _markdown_to_tweet_list(markdown)
+    # return tweets
 
     # title, authors, abstract = arxiv.scrape_arxiv_abs_page(paper_link)
 

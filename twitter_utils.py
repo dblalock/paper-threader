@@ -36,11 +36,14 @@ BEARER_TOKEN = os.environ["BEARER_TOKEN"]
 class Tweet:
     text: str
     imgs: List[str] = field(default_factory=list)
+    tag_users: List[str] = field(default_factory=list)
 
     def __str__(self):
         ret = self.text
         for img in self.imgs:
             ret += f'\n - {img[:70]}'
+        for username in self.tag_users:
+            ret += f'\n@{username}'
         return ret
 
 
@@ -66,14 +69,15 @@ def authenticate_as_another_account():
         API_KEY_SECRET,
         callback="oob",
     )
-    print("Please go to this URL to enable this app, then enter the PIN:")
+    print("Please go to this URL to enable this app for your")
+    print("Twitter account, then enter the PIN it shows:")
     print(oauth1_user_handler.get_authorization_url())
     pin = input("Input PIN: ")
     access_token, access_token_secret = oauth1_user_handler.get_access_token(pin)
     print("here are your access token and access token secret:")
-    print('access_token', access_token)
-    print('access_token_secret', access_token_secret)
-    print("you can modify the script to just use these by default")
+    print('access_token:', access_token)
+    print('access_token_secret:', access_token_secret)
+    print("You can have the script use these by default")
     print("by modifying the .env file. Or so I assume.")
     oauth1_user_handler.set_access_token(ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
     return tweepy.API(oauth1_user_handler, wait_on_rate_limit=True)
@@ -173,6 +177,9 @@ def create_tweet(api: tweepy.API,
 def create_thread(tweets: List[Tweet], tag_users: Optional[List[tweepy.User]] = None, quote_first_tweet_at_end: Union[str, bool] = 'auto', debug_mode: bool = False):
     api = authenticate_v1()
     client = authenticate_v2()
+
+    if tag_users is None:  # can also attach it to the tweet
+        tag_users = tweets[0].tag_users or None
 
     if quote_first_tweet_at_end == 'auto':
         quote_first_tweet_at_end = len(tweets) > 3
