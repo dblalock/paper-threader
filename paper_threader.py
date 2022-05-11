@@ -31,7 +31,7 @@ MAX_TWEET_TEXT_SNIPPET_LENGTH = MAX_TWEET_TEXT_LENGTH - (2 * len(ELLIPSIS))
 
 def _print_user(user: tweepy.User):
     user_attrs = [
-        'id',           # unambiguous int unique to each user
+        # 'id',           # unambiguous int unique to each user
         'name',         # arbitrary text listed as their name
         'screen_name',  # user's handle is @{screen_name}
         'description', # bio

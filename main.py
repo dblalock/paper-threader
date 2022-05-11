@@ -85,9 +85,24 @@ def main() -> None:
               'not to be mixed with auto-tweeting due to duplicate ' +
               'final tweets'),
     )
-
+    parser.add_argument(
+        '--user_env',
+        default='',
+        type=str,
+        help=(f'Path to user .env file that specifies credentials for' +
+              'the twitter acccount to do stuff as. Only matters for' +
+              'creating tweets'),
+    )
+    parser.add_argument(
+        '--for_real',
+        default=False,
+        action='store_true',
+        help=(f'Shorthand to set --user_env to {twit.DEFAULT_USER_ENV_PATH} instead of None'),
+    )
 
     args = parser.parse_args()
+    if args.for_real and not args.user_env:
+        args.user_env = twit.DEFAULT_USER_ENV_PATH
 
     def _contents_at_input_path() -> str:
         with open(args.in_path) as f:
@@ -138,8 +153,9 @@ def main() -> None:
         # print("================================ preview")
         _save_or_print(preview_md)
 
-    # TODO pick up here by getting this working
     if args.tweet_markdown:
+        if args.user_env:
+            twit.override_env(args.user_env)
         markdown = _contents_at_input_path()
         tweets = pt.markdown_to_thread(markdown)
         twit.create_thread(tweets)

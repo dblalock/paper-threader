@@ -21,6 +21,8 @@ memory = joblib.Memory('.')
 # see https://github.com/theskumar/python-dotenv/blob/master/src/dotenv/main.py for docs
 load_dotenv(dotenv_path='.env')
 
+DEFAULT_USER_ENV_PATH = '.my.env'
+
 DEBUG_ACCOUNT_ID = 1521314141520027648
 
 FOLLOWER_LISTS_DIR = 'follower_lists'
@@ -30,6 +32,20 @@ API_KEY_SECRET = os.environ["API_KEY_SECRET"]
 ACCESS_TOKEN = os.environ["ACCESS_TOKEN"]
 ACCESS_TOKEN_SECRET = os.environ["ACCESS_TOKEN_SECRET"]
 BEARER_TOKEN = os.environ["BEARER_TOKEN"]
+
+
+def override_env(env_path: str = DEFAULT_USER_ENV_PATH):
+    load_dotenv(dotenv_path=env_path)
+    global API_KEY
+    global API_KEY_SECRET
+    global ACCESS_TOKEN
+    global ACCESS_TOKEN_SECRET
+    global BEARER_TOKEN
+    API_KEY = os.environ["API_KEY"]
+    API_KEY_SECRET = os.environ["API_KEY_SECRET"]
+    ACCESS_TOKEN = os.environ["ACCESS_TOKEN"]
+    ACCESS_TOKEN_SECRET = os.environ["ACCESS_TOKEN_SECRET"]
+    BEARER_TOKEN = os.environ["BEARER_TOKEN"]
 
 
 @dataclass
@@ -63,7 +79,7 @@ def authenticate_v2():
         access_token_secret=ACCESS_TOKEN_SECRET,
     )
 
-def authenticate_as_another_account():
+def authenticate_as_another_account(write_user_env_path: str = DEFAULT_USER_ENV_PATH):
     oauth1_user_handler = tweepy.OAuth1UserHandler(
         API_KEY,
         API_KEY_SECRET,
@@ -77,8 +93,15 @@ def authenticate_as_another_account():
     print("here are your access token and access token secret:")
     print('access_token:', access_token)
     print('access_token_secret:', access_token_secret)
-    print("You can have the script use these by default")
-    print("by modifying the .env file. Or so I assume.")
+
+    with open(write_user_env_path, 'w') as f:
+        f.write(f'ACCESS_TOKEN={access_token}')
+        f.write(f'\nACCESS_TOKEN_SECRET={access_token_secret}')
+    print(f"Wrote these as env vars to {write_user_env_path}.")
+    print(f"If you call override_env({write_user_env_path})")
+    print("before doing twitter stuff, it should now do it as")
+    print("the account you logged into.")
+
     oauth1_user_handler.set_access_token(ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
     return tweepy.API(oauth1_user_handler, wait_on_rate_limit=True)
 
