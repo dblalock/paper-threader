@@ -1,0 +1,7 @@
+Paper: {link}
+
+If you like this paper, consider RTing this (or another!) thread to publicize the authors' work, or following the authors: {authors}
+
+For more paper summaries, you might like following @mosaicml, me, or my newsletter: https://t.co/xX7NIpazHR
+
+As always, comments and corrections welcome!

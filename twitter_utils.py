@@ -35,17 +35,24 @@ BEARER_TOKEN = os.environ["BEARER_TOKEN"]
 
 
 def override_env(env_path: str = DEFAULT_USER_ENV_PATH):
-    load_dotenv(dotenv_path=env_path)
     global API_KEY
     global API_KEY_SECRET
     global ACCESS_TOKEN
     global ACCESS_TOKEN_SECRET
     global BEARER_TOKEN
+    print(f"overriding default user! Using path '{env_path}'")
+    print("old access token: ", ACCESS_TOKEN)
+    # print(os.environ["ACCESS_TOKEN"])
+    load_dotenv(dotenv_path=env_path, override=True)
+    # load_dotenv(dotenv_path='.my.env')
+    # print(os.environ["ACCESS_TOKEN"])
     API_KEY = os.environ["API_KEY"]
     API_KEY_SECRET = os.environ["API_KEY_SECRET"]
     ACCESS_TOKEN = os.environ["ACCESS_TOKEN"]
     ACCESS_TOKEN_SECRET = os.environ["ACCESS_TOKEN_SECRET"]
     BEARER_TOKEN = os.environ["BEARER_TOKEN"]
+    print("new access token: ", ACCESS_TOKEN)
+    # import sys; sys.exit()
 
 
 @dataclass
@@ -106,7 +113,7 @@ def authenticate_as_another_account(write_user_env_path: str = DEFAULT_USER_ENV_
     return tweepy.API(oauth1_user_handler, wait_on_rate_limit=True)
 
 
-@memory.cache
+@memory.cache(ignore=['api'])
 def search_users(api: tweepy.API, *args, **kwargs):
     return api.search_users(*args, **kwargs)
 
@@ -125,7 +132,8 @@ def _download_img(url: str, tempdir: str) -> str:
     return saveas
 
 
-@memory.cache(ignore=['api'])
+# caching breaks when you switch users; uncomment for debugging
+# @memory.cache(ignore=['api'])
 def _upload_media(api: tweepy.API, filename: str):
     with tempfile.TemporaryDirectory() as d:
         if filename.startswith('http'):
@@ -268,6 +276,7 @@ def save_followers(id_or_screen_name: Union[int, str]):
     if not os.path.exists(FOLLOWER_LISTS_DIR):
         os.mkdir(FOLLOWER_LISTS_DIR)
     saveas = os.path.join(FOLLOWER_LISTS_DIR, str(id_or_screen_name) + '.csv')
+    print("total followers of followers: ", df['followers_count'].sum())
     df.to_csv(saveas, index=False)
 
 

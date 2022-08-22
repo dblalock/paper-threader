@@ -18,6 +18,7 @@ import twitter_utils as twit
 TEST_HTML_EASY = 'test-summary-easy.html'
 TEST_HTML_HARD = 'test-summary-hard.html'
 FINAL_TWEET_FMT_STRING_PATH_WITH_AUTHORS = 'final-tweet-format-with-authors.txt'
+FINAL_TWEET_FMT_STRING_PATH_ONE_AUTHOR = 'final-tweet-format-one-author.txt'
 FINAL_TWEET_FMT_STRING_PATH_NO_AUTHORS = 'final-tweet-format-no-authors.txt'
 
 TAG_USERS_MARKER = 'TAG_USERS:'
@@ -41,7 +42,10 @@ def _print_user(user: tweepy.User):
         print(f'{attr}:\t{getattr(user, attr)}')
 
 
-def find_authors(authors: Sequence[str], verbose: bool = False) -> List[tweepy.User]:
+def find_authors(authors: Sequence[str],
+                 bonus_terms: Optional[List[str]] = None,
+                 verbose: bool = True,
+                 min_follower_count: int = 20) -> List[tweepy.User]:
     api = twit.authenticate_v1()
 
     whitelist_anycase_strings = [
@@ -64,6 +68,8 @@ def find_authors(authors: Sequence[str], verbose: bool = False) -> List[tweepy.U
         'stanford',
         'cmu',
         'harvard',
+        'oxford',
+        'cambridge',
         'student',
         'machine learning',
         'data',
@@ -73,18 +79,23 @@ def find_authors(authors: Sequence[str], verbose: bool = False) -> List[tweepy.U
         'MIT',
         'AI',
         'ML',
+        'NLP',
+        'FAIR',
     ]
+    bonus_terms = bonus_terms or []
 
     name2scored_users = {}
     for author in authors:
         users = twit.search_users(api, q=author, page=0, count=10)
         for i, user in enumerate(users):
             score = 0
+            if not user.description:
+                continue  # auto-skip people with no bio
+            if user.followers_count < min_follower_count:
+                continue  # auto-skip tiny, inactive accounts
             if i == 0:
                 score += 1  # twitter top hit is usually right
             if user.name.lower() == author.lower():
-                score += 1
-            if user.followers_count > 10:
                 score += 1
             lowercase_bio = user.description.lower()
             for substr in whitelist_anycase_strings:
@@ -92,6 +103,9 @@ def find_authors(authors: Sequence[str], verbose: bool = False) -> List[tweepy.U
                     score += 1
             for substr in whitelist_cased_strings:
                 if substr in user.description:
+                    score += 1
+            for s in bonus_terms:
+                if s in user.description:
                     score += 1
             if score > 2:  # needs more than just name and 0th position
                 name2scored_users[author] = name2scored_users.get(author, []) + [(score, user)]
@@ -121,7 +135,7 @@ def find_authors(authors: Sequence[str], verbose: bool = False) -> List[tweepy.U
     return ret
 
 
-def authors_usernames_for_paper(url: str, verbose: bool = False) -> List[str]:
+def authors_usernames_for_paper(url: str, verbose: bool = True) -> List[str]:
     _, authors, _ = arxiv.scrape_arxiv_abs_page(url)
     users = find_authors(authors, verbose=verbose)
     return [user.screen_name for user in users]
@@ -354,8 +368,12 @@ def _markdown_to_text_img_elems(markdown: str) -> Tuple[List[Union[TextElem, Img
 
 
 def _generate_final_tweet_elem(paper_link: str, author_usernames: Optional[List[str]] = None):
-    fmt_path = (FINAL_TWEET_FMT_STRING_PATH_WITH_AUTHORS if author_usernames
-                else FINAL_TWEET_FMT_STRING_PATH_NO_AUTHORS)
+    if not author_usernames:
+        fmt_path = FINAL_TWEET_FMT_STRING_PATH_NO_AUTHORS
+    elif len(author_usernames) == 1:
+        fmt_path = FINAL_TWEET_FMT_STRING_PATH_ONE_AUTHOR
+    else:
+        fmt_path = FINAL_TWEET_FMT_STRING_PATH_WITH_AUTHORS
 
     with open(fmt_path, 'r') as f:
         tail_tweet_format_str = f.read()
@@ -377,10 +395,21 @@ def _generate_final_tweet_elem(paper_link: str, author_usernames: Optional[List[
 def skeleton_for_paper(paper_title: str,
                        paper_link: str,
                        author_usernames: List[str],
-                       abstract: str) -> str:
-    text = f'{paper_title}\n{abstract}'
-    tail_elem = _generate_final_tweet_elem(paper_link=paper_link, author_usernames=author_usernames)
-    return f'{text}\n\n{tail_elem.text}'
+                       abstract: str,
+                       add_caboose: bool = False) -> str:
+    abstract = re.sub('[\s]', ' ', abstract)
+    text = f'[{paper_title}]({paper_link}\n{abstract}'
+    if author_usernames:
+        usernames = ['@' + name.strip('@') for name in author_usernames]
+        if add_caboose:
+            tail_elem = _generate_final_tweet_elem(
+                paper_link=paper_link,
+                author_usernames=author_usernames,
+            )
+            text = f'{text}\n\n{tail_elem.text}'
+        else:
+            text += f'\n\n{TAG_USERS_MARKER} {" ".join(usernames)}'
+    return text
 
 
 def _shard_text(text: str) -> List[str]:
@@ -440,10 +469,21 @@ def _shard_text(text: str) -> List[str]:
     return output_chunks
 
 
-def _markdown_to_tweet_list(markdown: str, infer_tag_users_from_text: bool = True, infer_tag_users_from_link: bool = True) -> Tuple[List[twit.Tweet], str]:
+def _markdown_to_tweet_list(markdown: str,
+                            infer_tag_users_from_text: bool = True,
+                            infer_tag_users_from_link: bool = True,
+                            omit_mention_authors: bool = False,
+                            tag_users_in_image_max_tweets: int = 2,
+                            authors: Optional[Sequence[str]] = None) -> Tuple[List[twit.Tweet], str]:
     """Raw conversion of markdown to tweet objects. No thread features."""
 
-    tag_users = []
+    if authors:
+        tag_users = authors
+        infer_tag_users_from_link = False
+        infer_tag_users_from_text = False
+    else:
+        tag_users = []
+
     if infer_tag_users_from_text:
         keep_lines = []
         for line in markdown.splitlines():
@@ -466,13 +506,18 @@ def _markdown_to_tweet_list(markdown: str, infer_tag_users_from_text: bool = Tru
                 paper_link = first_paper.group()
             # print('matching string: ', paper_link)
 
-        # import sys; sys.exit()
+        # print("paper link: ", paper_link)
         if paper_link:
             tag_users = authors_usernames_for_paper(paper_link)
+        # import sys; sys.exit()
 
+    # print("paper link: ", paper_link)
+    # print("tag_users: ", tag_users)
     # import sys; sys.exit()
 
-    final_elem = _generate_final_tweet_elem(paper_link, author_usernames=tag_users)
+    mention_authors = [] if omit_mention_authors else tag_users
+    final_elem = _generate_final_tweet_elem(
+        paper_link, author_usernames=mention_authors)
     tweet_elems.append(final_elem)
 
     # print("================================ Tweet elems:")
@@ -493,7 +538,7 @@ def _markdown_to_tweet_list(markdown: str, infer_tag_users_from_text: bool = Tru
 
     # two or more images at the start is undefined behavior
     assert isinstance(tweet_elems[0], TextElem), "Only one image can come before all the text"
-    tweet_elems[0].text = paper_title + '\n' + tweet_elems[0].text
+    tweet_elems[0].text = f'"{paper_title}"\n\n{tweet_elems[0].text.strip()}'
 
     all_tweets = []
     while len(tweet_elems):
@@ -526,11 +571,16 @@ def _markdown_to_tweet_list(markdown: str, infer_tag_users_from_text: bool = Tru
                 tweets = tweets[1:]
 
         # split imgs up across tweets
-        imgs_per_tweet = int(math.ceil(len(imgs) / len(tweets)))
-        for i, tweet in enumerate(tweets):
-            img_start_idx = i * imgs_per_tweet
-            img_end_idx = img_start_idx + imgs_per_tweet
-            tweet.imgs = imgs[img_start_idx:img_end_idx]
+        if len(imgs) and not len(tweets):
+            print("Uh oh; no text to attach images to...")
+            print("all_tweets so far:")
+            print(all_tweets)
+        if len(imgs):
+            imgs_per_tweet = int(math.ceil(len(imgs) / len(tweets)))
+            for i, tweet in enumerate(tweets):
+                img_start_idx = i * imgs_per_tweet
+                img_end_idx = img_start_idx + imgs_per_tweet
+                tweet.imgs = imgs[img_start_idx:img_end_idx]
 
         all_tweets += tweets
 
@@ -547,7 +597,7 @@ def _markdown_to_tweet_list(markdown: str, infer_tag_users_from_text: bool = Tru
     #     print(tweet)
 
     # for tagging in initial image
-    if tag_users:
+    if tag_users and len(all_tweets) <= tag_users_in_image_max_tweets:
         tag_users = [user.strip('@') for user in tag_users]
         all_tweets[0].tag_users = tag_users
 
@@ -565,8 +615,8 @@ def _markdown_to_tweet_list(markdown: str, infer_tag_users_from_text: bool = Tru
 # def markdown_to_thread(markdown: str, saveas: str = '', preview: bool = True, post_tweet: bool = False, tag_users: Optional[List[str]] = None):
 
 # def markdown_to_thread(markdown: str) -> List[twit.Tweet, str]:
-def markdown_to_thread(markdown: str) -> List[twit.Tweet]:
-    return _markdown_to_tweet_list(markdown)
+def markdown_to_thread(markdown: str, **kwargs) -> List[twit.Tweet]:
+    return _markdown_to_tweet_list(markdown, **kwargs)
     # return tweets
 
     # title, authors, abstract = arxiv.scrape_arxiv_abs_page(paper_link)

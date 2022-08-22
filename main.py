@@ -104,6 +104,32 @@ def main() -> None:
         help=('Tweets contents of a markdown file as a thread. Use ' +
               '--markdown_to_thread_preview to check content first.'),
     )
+    parser.add_argument(
+        '--tag_users_in_image_max_tweets',
+        default=2,
+        type=int,
+        help=('Whether to tag authors in the first image. This is a' +
+              'nicer tweet to look at, but also gives them a ' +
+              'notification for every tweet in the thread. ' +
+              'Recommended for short threads. Takes an int, ' +
+              "and doesn't tag the users if the thread has more tweets " +
+              'than the provided number.'),
+    )
+    parser.add_argument(
+        '--omit_mention_authors',
+        default=False,
+        action='store_true',
+        help=('Omit mentioning authors in final tweet. Helpful for' +
+              'awkward situations in which only a small fraction of' +
+              'authors are on twitter.'),
+    )
+    parser.add_argument(
+        '--authors_to_mention',
+        default='',
+        type=str,
+        nargs='+',
+        help=('A list of authors to mention in the tweet'),
+    )
 
     args = parser.parse_args()
     if args.for_real and not args.user_env:
@@ -143,12 +169,23 @@ def main() -> None:
         title, authors, abstract = arxiv.scrape_arxiv_abs_page(url)
         author_users = pt.find_authors(authors)
         author_usernames = [user.screen_name for user in author_users]
-        text = pt.skeleton_for_paper(paper_title=title, paper_link=url, author_usernames=author_usernames, abstract=abstract)
+        text = pt.skeleton_for_paper(paper_title=title,
+                                     paper_link=url,
+                                     author_usernames=author_usernames,
+                                     abstract=abstract)
         _save_or_print(text)
+        return
+
+    create_tweets_kwargs = dict(
+        authors = args.authors_to_mention,
+        omit_mention_authors=args.omit_mention_authors,
+        tag_users_in_image_max_tweets=args.tag_users_in_image_max_tweets)
 
     if args.markdown_to_thread_preview:
+        if not args.out_path:
+            args.out_path = 'preview-' + args.in_path
         markdown = _contents_at_input_path()
-        tweets = pt.markdown_to_thread(markdown)
+        tweets = pt.markdown_to_thread(markdown, **create_tweets_kwargs)
         # print("================================ tweets")
         # for tweet in tweets:
         #     print("----")
@@ -162,7 +199,10 @@ def main() -> None:
         if args.user_env:
             twit.override_env(args.user_env)
         markdown = _contents_at_input_path()
-        tweets = pt.markdown_to_thread(markdown)
+        tweets = pt.markdown_to_thread(markdown, **create_tweets_kwargs)
+        # kwargs = {}
+        # if len(tweets) > args.tag_users_in_image_max_tweets:
+        #     kwargs['tag_users'] = []  # prevent tagging users
         twit.create_thread(tweets)
 
 
